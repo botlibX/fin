@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+# This file is placed in the Public Domain.
+#
+# pylint: disable=R,C,W0718,W0611,W0613,E0102,E0401,E0611,W0201,W0702
+
+
+"created clients"
+
+
+import inspect
+import os
+import random
+import shutil
+import sys
+import termios
+import time
+import _thread
+
+
+sys.path.insert(0, os.getcwd())
+
+
+from sbn import Client, Command, Default, Error, Event, Object
+from sbn import Storage
+from sbn import keys, laps, launch, parse_command, spl
+
+from sbn import modules as mods
+
+
+STARTTIME = time.time()
+
+
+Cfg = Default()
+Cfg.debug = True
+Cfg.mod =  "cmd,err,fnd,irc,log,mre,rss,tdo,thr,ver"
+Cfg.name = "tinder"
+Cfg.silent = False
+Cfg.skip = ["debug",]
+Cfg.version = "60"
+Cfg.wd = ".test"
+
+
+Storage.wd = Cfg.wd
+
+
+paylock = _thread.allocate_lock()
+outlock = _thread.allocate_lock()
+
+
+events = []
+
+
+param = Object()
+param.cfg = [
+    "server=localhost",
+    "nick=mekker",
+    "port=6697",
+    "commands=true",
+    ""]
+param.cmd = [""]
+param.dpl = ["hnrss title,summary,link"]
+param.mre = ["2"]
+param.nme = ["hnrss hackernews"]
+param.pwd = ["bart bla"]
+param.rem = ["hnrss"]
+param.rss = ["http://hnrss.org/newest"]
+param.ver = [""]
+
+
+class CLI(Client):
+
+    def say(self, channel, txt):
+        if "v" not in Cfg.opts:
+            return
+        cprint(txt)
+
+
+def consume(evts):
+    fixed = []
+    res = []
+    for evt in evts:
+        res.append(evt.wait())
+        if not evt.result:
+            print(f"no result for {evt.cmd}")
+        fixed.append(evt)
+    for fff in fixed:
+        try:
+            evts.remove(fff)
+        except ValueError:
+            continue
+    return res
+
+
+def cprint(txt):
+    print(txt.encode('utf-8', 'replace').decode())
+    sys.stdout.flush()
+
+
+def payload(clt) -> None:
+    cmds = list(keys(Command.cmds))
+    #random.shuffle(cmds)
+    with paylock:
+        nmr = 0
+        for cmd in cmds:
+            for ex in getattr(param, cmd, [""]):
+                evt = Event()
+                evt.orig = object.__repr__(clt)
+                evt.txt = cmd + " " + ex
+                evt.type = "command"
+                clt.put(evt)
+                events.append(evt)
+                nmr += 1
+        return nmr
+
+
+def scan(pkg, modstr) -> []:
+    for modname in spl(modstr):
+        module = getattr(pkg, modname, None)
+        if not module:
+            continue
+        for key, cmd in inspect.getmembers(module, inspect.isfunction):
+            if key.startswith("cb"):
+                continue
+            if 'event' in cmd.__code__.co_varnames:
+                Command.add(cmd)
+        for key, clz in inspect.getmembers(module, inspect.isclass):
+            if key.startswith("cb"):
+                continue
+            if not issubclass(clz, Object):
+                continue
+            Storage.add(clz)
+        yield module
+
+
+def wrap(func) -> None:
+    old2 = None
+    try:
+        old2 = termios.tcgetattr(sys.stdin.fileno())
+    except termios.error:
+        pass
+    try:
+        func()
+    except (KeyboardInterrupt, EOFError):
+        print("")
+    finally:
+        if old2:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old2)
+
+
+def main() -> None:
+    if os.path.exists(Storage.wd):
+        shutil.rmtree(Storage.wd)
+    Storage.skel()
+    parse_command(Cfg, " ".join(sys.argv[1:]))
+    Error.output = cprint
+    for mod in scan(mods, Cfg.mod):
+        mod.DEBUG = True
+    nrs = Cfg.index or 1
+    nrcommand = len(Command.cmds) or 1
+    cli = CLI()
+    cli.start()
+    waiters = []
+    for _nr in range(nrs):
+        waiters.append(launch(payload, cli, name=f"payload {_nr}"))
+    consume(events)
+    endtime = time.time()
+    lap = laps(endtime - STARTTIME)
+    percall = (endtime - STARTTIME)/(nrs * nrcommand)
+    print(mods)
+    print(f"{lap} {nrs} {nrcommand} {percall}")
+
+if __name__ == "__main__":
+    wrap(main)
+    Error.show()

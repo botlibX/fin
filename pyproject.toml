@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=43.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "fin"
+description = "The End"
+version = "1"
+authors = [
+    {name = "botlib", email = "libbotx@gmail.com" },
+]
+readme = "README.rst"
+license = { text="Public Domain"}
+classifiers=[
+    'Development Status :: 3 - Alpha',
+    'License :: Public Domain',
+    'Operating System :: Unix',
+    'Programming Language :: Python',
+    'Topic :: Utilities'
+]
+
+
+[project.scripts]
+fin = "fin.__main__:wrapped"
+
+[project.urls]
+"home" = "https://pypi.org/project/fin"
+"bugs" = "https://github.com/botlibx/fin/issues"
+"source" = "https://github.com/botlibx/fin"
+
+
+[project.optional-dependencies]
+dev = []
+
+
+[tool.setuptools]
+packages = [
+   "fin",
+   "fin.modules",
+]
+zip-safe = true
+
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "env*",
+    "html*",
+    "test*"
+]
